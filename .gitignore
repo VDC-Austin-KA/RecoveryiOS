@@ -1,0 +1,20 @@
+# Xcode
+build/
+DerivedData/
+*.xcresult
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Secrets
+.env
+RecoveryiOS/Resources/Configuration.plist
+
+# OS
+.DS_Store
+Thumbs.db

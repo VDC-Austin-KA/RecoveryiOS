@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Copy to RecoveryiOS/Resources/Configuration.plist (git-ignored) or run scripts/generate_config.sh,
+  which builds it from .env / CI environment variables. Values starting with "YOUR_" or left empty
+  are treated as unset, and the app falls back to its offline mock providers.
+-->
+<plist version="1.0">
+<dict>
+	<key>OPENAI_API_KEY</key>
+	<string>YOUR_OPENAI_API_KEY</string>
+	<key>OPENAI_MODEL</key>
+	<string>gpt-4o-mini</string>
+	<key>ANTHROPIC_API_KEY</key>
+	<string>YOUR_ANTHROPIC_API_KEY</string>
+	<key>ANTHROPIC_MODEL</key>
+	<string>claude-sonnet-5-5</string>
+	<key>MEETING_FEED_AA</key>
+	<string></string>
+	<key>MEETING_FEED_NA</key>
+	<string></string>
+	<key>MEETING_FEED_HA</key>
+	<string></string>
+	<key>MEETING_FEED_SMART</key>
+	<string></string>
+	<key>MEETING_FEED_ALANON</key>
+	<string></string>
+</dict>
+</plist>
