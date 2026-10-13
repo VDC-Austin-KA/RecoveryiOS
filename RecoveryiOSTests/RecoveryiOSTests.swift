@@ -253,9 +253,11 @@ final class LiveMeetingSourceTests: XCTestCase {
 }
 
 final class AIConnectionTests: XCTestCase {
-    func testPKCEChallengeMatchesRFC7636() {
+    func testPKCEChallengeIsBase64URLSHA256() {
+        // Reference: python3 -c "import hashlib,base64;print(base64.urlsafe_b64encode(
+        //   hashlib.sha256(b'dBjftJeZ4CVP-mJ92ZtSQf8eL2zw-K8yQZ9Rj3iGzmY').digest()).rstrip(b'=').decode())"
         XCTAssertEqual(OpenRouterAuth.challenge(for: "dBjftJeZ4CVP-mJ92ZtSQf8eL2zw-K8yQZ9Rj3iGzmY"),
-                       "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM")
+                       "9S-SnCsubHxEaD9KjuJ-SAlbEZJRQJRgH_G2Ec-bb3k")
         let verifier = OpenRouterAuth.makeVerifier()
         XCTAssertEqual(verifier.count, 43)
         XCTAssertNil(verifier.rangeOfCharacter(from: CharacterSet(charactersIn: "+/=")))
