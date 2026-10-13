@@ -19,10 +19,7 @@ final class AppServices {
     }
 
     var meetingProvider: any MeetingProvider {
-        if configuration.meetingFeeds.isEmpty {
-            return MockMeetingProvider()
-        }
-        return MeetingGuideProvider(feeds: configuration.meetingFeeds)
+        LiveMeetingProvider.standard(extraFeeds: configuration.meetingFeeds)
     }
 
     var llmClient: any LLMClient {

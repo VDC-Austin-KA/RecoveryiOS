@@ -29,4 +29,4 @@ xcodebuild test \
   -resultBundlePath build/TestResults.xcresult \
   CODE_SIGNING_ALLOWED=NO \
   | tee build/xcodebuild-test.log \
-  | xcpretty --report junit --output build/junit.xml
+  | if command -v xcpretty >/dev/null; then xcpretty --report junit --output build/junit.xml; else cat; fi

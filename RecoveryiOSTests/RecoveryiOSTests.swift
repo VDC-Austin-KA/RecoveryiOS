@@ -37,7 +37,7 @@ final class MeetingGuideDecodingTests: XCTestCase {
           {"name": "Closed Group", "day": "5", "time": "12:00", "attendance_option": "inactive"}
         ]
         """
-        let meetings = try MeetingGuideProvider.decode(Data(json.utf8), fellowship: .aa)
+        let meetings = try OMLAMeeting.decodeFeed(Data(json.utf8), fellowship: .aa)
         XCTAssertEqual(meetings.count, 3, "two days for the first meeting, one online, inactive skipped")
         XCTAssertEqual(meetings[0].latitude, 30.2672)
         XCTAssertEqual(meetings[0].weekday, 1)
@@ -163,5 +163,125 @@ final class JournalCipherTests: XCTestCase {
 
         let otherKey = JournalCipher(key: SymmetricKey(size: .bits256))
         XCTAssertThrowsError(try otherKey.open(sealed))
+    }
+}
+
+final class LiveMeetingSourceTests: XCTestCase {
+    func testDecodesBMLTRows() throws {
+        let json = """
+        [
+          {"id_bigint": "123", "meeting_name": "Just for Today", "weekday_tinyint": "2", "start_time": "19:30:00",
+           "latitude": "30.27", "longitude": "-97.74", "location_text": "Church", "location_street": "1 Main",
+           "location_municipality": "Austin", "location_province": "TX", "virtual_meeting_link": "", "venue_type": "1"},
+          {"id_bigint": "124", "meeting_name": "Online NA", "weekday_tinyint": "7", "start_time": "08:00:00",
+           "latitude": "0", "longitude": "0", "virtual_meeting_link": "https://zoom.us/j/1", "venue_type": "2"}
+        ]
+        """
+        let meetings = try BMLTSource.decode(Data(json.utf8))
+        XCTAssertEqual(meetings.count, 2)
+        XCTAssertEqual(meetings[0].weekday, 1, "BMLT 2 = Monday = OMLA 1")
+        XCTAssertEqual(meetings[0].time, "19:30")
+        XCTAssertEqual(meetings[0].mode, .inPerson)
+        XCTAssertEqual(meetings[0].address, "1 Main, Austin, TX")
+        XCTAssertEqual(meetings[0].latitude, 30.27)
+        XCTAssertEqual(meetings[1].weekday, 6)
+        XCTAssertEqual(meetings[1].mode, .online)
+        XCTAssertNil(meetings[1].coordinate)
+        XCTAssertEqual(meetings[1].conferenceURL?.host, "zoom.us")
+    }
+
+    func testDecodesAlAnonLocatorJSONPNearby() throws {
+        let jsonp = """
+        slw({"stores": [
+          {"storeid": "9", "name": "First Church", "data": {"description": "Serenity Seekers AFG", "address": "5 Oak St",
+            "map_lat": 30.27, "map_lng": -97.74, "x1": "Thursday 5:30 PM", "x2": "Saturday 10:00 AM"}},
+          {"storeid": "10", "name": "Far", "data": {"description": "Far away", "map_lat": "40.0", "map_lng": "-74.0", "x1": "Monday 7:00 PM"}}
+        ]})
+        """
+        let austin = CLLocation(latitude: 30.2672, longitude: -97.7431)
+        let meetings = try AlAnonSource.decode(Data(jsonp.utf8), near: austin, radius: 80_000)
+            .sorted { $0.weekday < $1.weekday }
+        XCTAssertEqual(meetings.count, 2, "the New York store is outside the radius")
+        XCTAssertEqual(meetings[0].weekday, 4)
+        XCTAssertEqual(meetings[0].time, "17:30")
+        XCTAssertEqual(meetings[1].weekday, 6)
+        XCTAssertEqual(meetings[1].time, "10:00")
+        XCTAssertEqual(meetings[0].name, "Serenity Seekers AFG")
+        XCTAssertEqual(meetings[0].fellowship, .alAnon)
+    }
+
+    func testFindsHashedTSMLCacheURL() {
+        let base = URL(string: "https://austinaa.org/meetings/")!
+        let escaped = #"<div id="tsml-ui" data-src="https:\/\/austinaa.org\/wp-content\/tsml-cache-abc123.json?99"></div>"#
+        XCTAssertEqual(TSMLSource.cacheURL(inHTML: escaped, base: base)?.absoluteString,
+                       "https://austinaa.org/wp-content/tsml-cache-abc123.json?99")
+        let relative = #"<div data-src="/wp-content/tsml-cache-ff00.json"></div>"#
+        XCTAssertEqual(TSMLSource.cacheURL(inHTML: relative, base: base)?.absoluteString,
+                       "https://austinaa.org/wp-content/tsml-cache-ff00.json")
+        XCTAssertNil(TSMLSource.cacheURL(inHTML: "<html>no feed</html>", base: base))
+    }
+
+    func testProviderSurvivesFailingSource() async throws {
+        struct Broken: MeetingSource {
+            let fellowship: Fellowship = .aa
+            func meetings(near location: CLLocation?) async throws -> [Meeting] { throw URLError(.notConnectedToInternet) }
+        }
+        struct Working: MeetingSource {
+            let fellowship: Fellowship = .na
+            func meetings(near location: CLLocation?) async throws -> [Meeting] {
+                try await MockMeetingProvider().meetings(near: location, fellowships: [.na])
+            }
+        }
+        let provider = LiveMeetingProvider(sources: [Broken(), Working()])
+        let meetings = try await provider.meetings(near: nil, fellowships: Set(Fellowship.allCases))
+        XCTAssertFalse(meetings.isEmpty)
+        XCTAssertTrue(meetings.allSatisfy { $0.fellowship == .na })
+
+        let allBroken = LiveMeetingProvider(sources: [Broken()])
+        do {
+            _ = try await allBroken.meetings(near: nil, fellowships: [.aa])
+            XCTFail("expected the source error when nothing loads")
+        } catch {}
+    }
+
+    func testRegionalFeedSkippedWhenFarAway() async throws {
+        let seattle = TSMLSource.aaMetros.first { $0.name.contains("Seattle") }!
+        let miami = CLLocation(latitude: 25.76, longitude: -80.19)
+        let result = try await seattle.meetings(near: miami)
+        XCTAssertTrue(result.isEmpty, "no download for a metro feed 4,000 km away")
+    }
+}
+
+final class AIConnectionTests: XCTestCase {
+    func testPKCEChallengeMatchesRFC7636() {
+        XCTAssertEqual(OpenRouterAuth.challenge(for: "dBjftJeZ4CVP-mJ92ZtSQf8eL2zw-K8yQZ9Rj3iGzmY"),
+                       "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM")
+        let verifier = OpenRouterAuth.makeVerifier()
+        XCTAssertEqual(verifier.count, 43)
+        XCTAssertNil(verifier.rangeOfCharacter(from: CharacterSet(charactersIn: "+/=")))
+    }
+
+    func testOpenRouterAuthURLAndCallback() throws {
+        let url = OpenRouterAuth.authorizationURL(challenge: "abc")
+        let items = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+        XCTAssertEqual(items.first { $0.name == "callback_url" }?.value, "recoveryios://openrouter")
+        XCTAssertEqual(items.first { $0.name == "code_challenge_method" }?.value, "S256")
+        XCTAssertEqual(OpenRouterAuth.code(from: URL(string: "recoveryios://openrouter?code=xyz")!), "xyz")
+    }
+
+    func testSubscriptionHandoffLinks() throws {
+        let history = [ChatTurn(role: .user, content: "I'm craving tonight"), ChatTurn(role: .assistant, content: "Let's breathe.")]
+        let prompt = SubscriptionHandoff.prompt(pathway: .twelveStep, history: history)
+        XCTAssertTrue(prompt.contains("I'm craving tonight"))
+        let claude = SubscriptionHandoff.claude.url(prompt: prompt)
+        XCTAssertEqual(claude.host, "claude.ai")
+        let query = try XCTUnwrap(URLComponents(url: claude, resolvingAgainstBaseURL: false)?.queryItems?.first?.value)
+        XCTAssertTrue(query.contains("craving"))
+        XCTAssertEqual(SubscriptionHandoff.chatGPT.url(prompt: String(repeating: "a", count: 5000)).host, "chatgpt.com")
+    }
+
+    func testAutomaticFallsBackToSomethingUsable() {
+        let client = LLMFactory.make(configuration: AppConfiguration(), preference: .onDevice)
+        XCTAssertFalse(client.displayName.isEmpty, "on-device unavailable on CI simulators falls back to offline companion")
     }
 }

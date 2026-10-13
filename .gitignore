@@ -18,3 +18,6 @@ RecoveryiOS/Resources/Configuration.plist
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude Code worktrees
+.claude/

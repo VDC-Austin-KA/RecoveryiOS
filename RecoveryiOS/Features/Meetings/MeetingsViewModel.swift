@@ -25,14 +25,18 @@ final class MeetingsViewModel {
             }
             return true
         }
-        return matches.sorted { lhs, rhs in
-            switch (lhs.distance(from: location), rhs.distance(from: location)) {
-            case let (l?, r?): return l < r
-            case (.some, .none): return true
-            case (.none, .some): return false
-            case (.none, .none): return (lhs.weekday, lhs.time) < (rhs.weekday, rhs.time)
+        // Distances computed once per meeting; online feeds hold thousands of entries.
+        return matches
+            .map { (meeting: $0, distance: $0.distance(from: location)) }
+            .sorted { lhs, rhs in
+                switch (lhs.distance, rhs.distance) {
+                case let (l?, r?): return l < r
+                case (.some, .none): return true
+                case (.none, .some): return false
+                case (.none, .none): return (lhs.meeting.weekday, lhs.meeting.time) < (rhs.meeting.weekday, rhs.meeting.time)
+                }
             }
-        }
+            .map { $0.meeting }
     }
 
     func toggle(_ fellowship: Fellowship) {
@@ -50,13 +54,21 @@ final class MeetingsViewModel {
         defer { isLoading = false }
         do {
             meetings = try await provider.meetings(near: location, fellowships: Set(Fellowship.allCases))
-            statusMessage = provider is MockMeetingProvider
-                ? "Showing sample meetings. Add Meeting Guide feed URLs in Configuration.plist for live listings."
-                : nil
+            if location == nil {
+                statusMessage = "Turn on location to see in-person meetings near you. Showing online meetings."
+            } else if !meetings.contains(where: { $0.coordinate != nil }) {
+                statusMessage = "No listed in-person meetings nearby yet — use the official finders below or join online."
+            } else {
+                statusMessage = nil
+            }
         } catch {
             let descriptor = FetchDescriptor<CachedMeeting>(sortBy: [SortDescriptor(\.lastViewed, order: .reverse)])
             meetings = ((try? context.fetch(descriptor)) ?? []).compactMap(\.meeting)
             statusMessage = "You appear to be offline. Showing \(meetings.count) saved meeting(s)."
+        }
+        if meetings.isEmpty, let samples = try? await MockMeetingProvider().meetings(near: location, fellowships: Set(Fellowship.allCases)) {
+            meetings = samples
+            statusMessage = "Couldn't load listings (no connection?). Showing sample meetings."
         }
     }
 }

@@ -30,6 +30,17 @@ enum Fellowship: String, CaseIterable, Identifiable, Codable, Hashable {
         }
     }
 
+    /// Official web meeting finder (HA and SMART publish no machine-readable data).
+    var officialFinderURL: URL {
+        switch self {
+        case .aa: URL(string: "https://www.aa.org/find-aa-resources")!
+        case .na: URL(string: "https://www.na.org/meetingsearch/")!
+        case .ha: URL(string: "https://heroinanonymous.org/meetings/")!
+        case .smart: URL(string: "https://meetings.smartrecovery.org/meetings/")!
+        case .alAnon: URL(string: "https://al-anon.org/al-anon-meetings/find-an-al-anon-meeting/")!
+        }
+    }
+
     var icon: String {
         switch self {
         case .aa: "a.circle.fill"
@@ -75,6 +86,8 @@ struct Meeting: Identifiable, Hashable, Codable {
     var notes: String?
     var types: [String]
     var mode: AttendanceMode
+    /// IANA zone the meeting time is expressed in (online meetings span the globe); nil = local.
+    var timeZone: String? = nil
 
     var coordinate: CLLocationCoordinate2D? {
         guard let latitude, let longitude else { return nil }
@@ -101,7 +114,15 @@ struct Meeting: Identifiable, Hashable, Codable {
         components.hour = hourMinute.hour
         components.minute = hourMinute.minute
         guard let date = Calendar.current.date(from: components) else { return time }
-        return date.formatted(date: .omitted, time: .shortened)
+        let formatted = date.formatted(date: .omitted, time: .shortened)
+        return timeZoneLabel.map { "\(formatted) \($0)" } ?? formatted
+    }
+
+    /// Abbreviation of the meeting's time zone when it differs from the device's.
+    var timeZoneLabel: String? {
+        guard let timeZone, let zone = TimeZone(identifier: timeZone),
+              zone.secondsFromGMT() != TimeZone.current.secondsFromGMT() else { return nil }
+        return zone.abbreviation()
     }
 
     var isToday: Bool {
@@ -113,6 +134,8 @@ struct Meeting: Identifiable, Hashable, Codable {
         components.weekday = weekday + 1
         components.hour = hourMinute.hour
         components.minute = hourMinute.minute
+        var calendar = calendar
+        if let timeZone, let zone = TimeZone(identifier: timeZone) { calendar.timeZone = zone }
         return calendar.nextDate(after: date, matching: components, matchingPolicy: .nextTime)
     }
 }

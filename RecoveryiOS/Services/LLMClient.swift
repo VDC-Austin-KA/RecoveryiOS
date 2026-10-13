@@ -38,16 +38,24 @@ enum LLMFactory {
     static func make(configuration: AppConfiguration, preference: AIProviderKind) -> any LLMClient {
         let openAIKey = Keychain.string(for: APIKeyAccount.openAI) ?? configuration.openAIKey
         let anthropicKey = Keychain.string(for: APIKeyAccount.anthropic) ?? configuration.anthropicKey
+        let openRouterKey = Keychain.string(for: APIKeyAccount.openRouter)
         switch preference {
         case .mock:
             break
+        case .onDevice:
+            if let client = OnDeviceLLM.makeClient() { return client }
+        case .openRouter:
+            if let openRouterKey { return OpenRouterClient(apiKey: openRouterKey) }
         case .openAI:
             if let openAIKey { return OpenAIClient(apiKey: openAIKey, model: configuration.openAIModel) }
         case .anthropic:
             if let anthropicKey { return AnthropicClient(apiKey: anthropicKey, model: configuration.anthropicModel) }
         case .automatic:
+            // Paid keys first (the user chose to add them), then free options.
             if let anthropicKey { return AnthropicClient(apiKey: anthropicKey, model: configuration.anthropicModel) }
             if let openAIKey { return OpenAIClient(apiKey: openAIKey, model: configuration.openAIModel) }
+            if let openRouterKey { return OpenRouterClient(apiKey: openRouterKey) }
+            if let client = OnDeviceLLM.makeClient() { return client }
         }
         return MockLLMClient()
     }
@@ -63,19 +71,23 @@ private struct OpenAIResponse: Decodable {
     let choices: [Choice]
 }
 
+/// OpenAI Chat Completions, also used for OpenAI-compatible endpoints (OpenRouter).
 struct OpenAIClient: LLMClient {
     let apiKey: String
     let model: String
     var session: URLSession = .shared
+    var endpoint = URL(string: "https://api.openai.com/v1/chat/completions")!
+    var extraHeaders: [String: String] = [:]
 
     var displayName: String { "OpenAI · \(model)" }
 
     func complete(system: String, messages: [ChatTurn]) async throws -> String {
-        var request = URLRequest(url: URL(string: "https://api.openai.com/v1/chat/completions")!)
+        var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
-        request.timeoutInterval = 60
+        request.timeoutInterval = 90
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        for (field, value) in extraHeaders { request.setValue(value, forHTTPHeaderField: field) }
         let turns: [[String: String]] = [["role": "system", "content": system]]
             + messages.map { ["role": $0.role.rawValue, "content": $0.content] }
         let body: [String: Any] = ["model": model, "messages": turns, "temperature": 0.7]

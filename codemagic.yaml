@@ -1,28 +1,15 @@
-# Codemagic CI/CD for RecoveryiOS — https://docs.codemagic.io/yaml-quick-start/building-a-native-ios-app/
-#
-# ios-ci       Runs on every push/PR with zero setup: generates config, runs unit tests on a
-#              simulator and builds an unsigned Release .xcarchive. No Apple credentials needed.
-# ios-release  Signed App Store build uploaded to TestFlight. Requires an App Store Connect API key
-#              integration and an environment variable group (see README › Codemagic setup).
-
+# Codemagic CI for RecoveryiOS — works with zero setup (no Apple account, no env vars).
+# Every push: generate config → unit tests on a simulator → unsigned Release build →
+# RecoveryiOS-unsigned.ipa artifact for Sideloadly/AltStore (they re-sign with your Apple ID).
 workflows:
-  ios-ci:
-    name: iOS CI · test + unsigned archive
-    max_build_duration: 60
+  ios-unsigned:
+    name: iOS unsigned IPA
     instance_type: mac_mini_m2
+    max_build_duration: 45
     environment:
       xcode: latest
-      # Optional: create a "recovery_api_keys" group in Codemagic (OPENAI_API_KEY, ANTHROPIC_API_KEY,
-      # MEETING_FEED_*) and uncomment to bake keys into CI builds. Without it the app uses mock providers.
-      # groups:
-      #   - recovery_api_keys
     triggering:
-      events:
-        - push
-        - pull_request
-      branch_patterns:
-        - pattern: "*"
-          include: true
+      events: [push]
       cancel_previous_builds: true
     scripts:
       - name: Generate Configuration.plist
@@ -30,58 +17,13 @@ workflows:
       - name: Unit tests
         script: bash scripts/ci_test.sh
         test_report: build/junit.xml
-      - name: Unsigned Release archive
-        script: bash scripts/ci_archive_unsigned.sh
+      - name: Build unsigned IPA
+        script: bash scripts/ci_build_ipa.sh
     artifacts:
-      - build/RecoveryiOS-unsigned.xcarchive.zip
+      - build/*.ipa
       - build/xcodebuild-test.log
       - /tmp/xcodebuild_logs/*.log
-
-  ios-release:
-    name: iOS Release · TestFlight
-    max_build_duration: 90
-    instance_type: mac_mini_m2
-    integrations:
-      app_store_connect: Codemagic API Key   # name of your App Store Connect API key integration
-    environment:
-      xcode: latest
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.recoveryapp.RecoveryiOS
-      groups:
-        - recovery_api_keys   # create in Codemagic › Environment variables (may be empty)
-      vars:
-        XCODE_PROJECT: RecoveryiOS.xcodeproj
-        XCODE_SCHEME: RecoveryiOS
-        APP_STORE_APPLE_ID: 0000000000   # replace with the app's Apple ID from App Store Connect
-    triggering:
-      events:
-        - tag
-      tag_patterns:
-        - pattern: "v*"
-          include: true
-    scripts:
-      - name: Generate Configuration.plist
-        script: bash scripts/generate_config.sh
-      - name: Unit tests
-        script: bash scripts/ci_test.sh
-        test_report: build/junit.xml
-      - name: Apply provisioning profiles
-        script: xcode-project use-profiles
-      - name: Increment build number
-        script: |
-          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" || echo 0)
-          agvtool new-version -all $((LATEST + 1))
-      - name: Build signed IPA
-        script: |
-          xcode-project build-ipa \
-            --project "$XCODE_PROJECT" \
-            --scheme "$XCODE_SCHEME"
-    artifacts:
-      - build/ios/ipa/*.ipa
-      - /tmp/xcodebuild_logs/*.log
-      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
     publishing:
-      app_store_connect:
-        auth: integration
-        submit_to_testflight: true
+      email:
+        recipients: [keithacker33@gmail.com]
+        notify: { success: true, failure: true }

@@ -5,11 +5,7 @@ struct SettingsView: View {
     @Environment(AppServices.self) private var services
     @Query private var profiles: [SobrietyProfile]
     @AppStorage("pathway") private var pathwayRaw = RecoveryPathway.twelveStep.rawValue
-    @AppStorage(AIProviderKind.storageKey) private var providerRaw = AIProviderKind.automatic.rawValue
     @AppStorage("journalLockEnabled") private var journalLockEnabled = true
-    @State private var openAIKey = Keychain.string(for: APIKeyAccount.openAI) ?? ""
-    @State private var anthropicKey = Keychain.string(for: APIKeyAccount.anthropic) ?? ""
-    @State private var keysSaved = false
 
     var body: some View {
         Form {
@@ -39,31 +35,7 @@ struct SettingsView: View {
                 Text("Shapes the AI assistant's language, daily affirmations and grounding prompts.")
             }
 
-            Section {
-                Picker("Provider", selection: $providerRaw) {
-                    ForEach(AIProviderKind.allCases) { Text($0.displayName).tag($0.rawValue) }
-                }
-                SecureField("Anthropic API key", text: $anthropicKey)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                SecureField("OpenAI API key", text: $openAIKey)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                Button(keysSaved ? "Saved to Keychain ✓" : "Save keys") {
-                    Keychain.setString(anthropicKey, for: APIKeyAccount.anthropic)
-                    Keychain.setString(openAIKey, for: APIKeyAccount.openAI)
-                    services.settingsRevision += 1
-                    keysSaved = true
-                }
-                LabeledContent("Active", value: services.llmClient.displayName)
-            } header: {
-                Text("AI assistant (bring your own key)")
-            } footer: {
-                Text("Keys are stored in the iOS Keychain on this device only. With no key, a private offline companion answers instead.")
-            }
-            .onChange(of: providerRaw) { services.settingsRevision += 1 }
-            .onChange(of: anthropicKey) { keysSaved = false }
-            .onChange(of: openAIKey) { keysSaved = false }
+            AIAssistantSettings()
 
             Section {
                 Toggle("Require Face ID for journal", isOn: $journalLockEnabled)
@@ -74,9 +46,10 @@ struct SettingsView: View {
             }
 
             Section("Meeting data") {
-                ForEach(Fellowship.allCases) { fellowship in
-                    LabeledContent(fellowship.fullName, value: services.configuration.meetingFeeds[fellowship] == nil ? "Sample data" : "Live feed")
-                }
+                LabeledContent("AA", value: "Online Intergroup + NYC, Austin, Phoenix, Seattle, SF")
+                LabeledContent("NA", value: "BMLT worldwide")
+                LabeledContent("Al-Anon", value: "al-anon.org finder data")
+                LabeledContent("HA & SMART", value: "Official finder links")
             }
 
             Section("About") {

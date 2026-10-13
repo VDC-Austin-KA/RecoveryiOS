@@ -6,38 +6,7 @@ protocol MeetingProvider {
 }
 
 // MARK: - Meeting Guide / OMLA
-
-/// Reads Meeting Guide (OMLA) JSON feeds — one feed URL per fellowship, configured via
-/// `MEETING_FEED_*` keys. Spec: https://github.com/code4recovery/spec
-struct MeetingGuideProvider: MeetingProvider {
-    let feeds: [Fellowship: URL]
-    var session: URLSession = .shared
-    var radiusMeters: CLLocationDistance = 80_000
-
-    func meetings(near location: CLLocation?, fellowships: Set<Fellowship>) async throws -> [Meeting] {
-        var result: [Meeting] = []
-        var lastError: Error?
-        for (fellowship, url) in feeds where fellowships.contains(fellowship) {
-            do {
-                let (data, response) = try await session.data(from: url)
-                if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                    throw URLError(.badServerResponse)
-                }
-                result += try Self.decode(data, fellowship: fellowship)
-            } catch {
-                lastError = error
-            }
-        }
-        if result.isEmpty, let lastError { throw lastError }
-        guard let location else { return result }
-        // Online-only meetings have no coordinates and are always kept.
-        return result.filter { ($0.distance(from: location) ?? 0) <= radiusMeters }
-    }
-
-    static func decode(_ data: Data, fellowship: Fellowship) throws -> [Meeting] {
-        try JSONDecoder().decode([OMLAMeeting].self, from: data).flatMap { $0.meetings(fellowship: fellowship) }
-    }
-}
+// Live sources (TSML, BMLT, Al-Anon) live in MeetingSources.swift.
 
 /// Tolerant decoder for OMLA records: `day` may be an Int, [Int] or String, and
 /// coordinates may be numbers or strings depending on the feed generator.
@@ -55,6 +24,7 @@ struct OMLAMeeting: Decodable {
     let conferenceURL: String?
     let notes: String?
     let attendanceOption: String?
+    let timeZone: String?
 
     private enum CodingKeys: String, CodingKey {
         case name, slug, day, time, location, address, city, state, latitude, longitude, types, notes
@@ -62,6 +32,7 @@ struct OMLAMeeting: Decodable {
         case formattedAddress = "formatted_address"
         case conferenceURL = "conference_url"
         case attendanceOption = "attendance_option"
+        case timeZone = "timezone"
     }
 
     init(from decoder: Decoder) throws {
@@ -92,12 +63,17 @@ struct OMLAMeeting: Decodable {
         conferenceURL = try? c.decode(String.self, forKey: .conferenceURL)
         notes = try? c.decode(String.self, forKey: .notes)
         attendanceOption = try? c.decode(String.self, forKey: .attendanceOption)
+        timeZone = try? c.decode(String.self, forKey: .timeZone)
     }
 
     private static func double(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> Double? {
         if let value = try? c.decode(Double.self, forKey: key) { return value }
         if let text = try? c.decode(String.self, forKey: key) { return Double(text) }
         return nil
+    }
+
+    static func decodeFeed(_ data: Data, fellowship: Fellowship) throws -> [Meeting] {
+        try JSONDecoder().decode([OMLAMeeting].self, from: data).flatMap { $0.meetings(fellowship: fellowship) }
     }
 
     func meetings(fellowship: Fellowship) -> [Meeting] {
@@ -127,7 +103,8 @@ struct OMLAMeeting: Decodable {
                 conferenceURL: conferenceURL.flatMap { URL(string: $0) },
                 notes: notes,
                 types: types,
-                mode: mode
+                mode: mode,
+                timeZone: timeZone
             )
         }
     }

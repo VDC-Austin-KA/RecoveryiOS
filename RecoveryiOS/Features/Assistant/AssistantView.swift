@@ -1,9 +1,11 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct AssistantView: View {
     @Environment(AppServices.self) private var services
     @Environment(\.modelContext) private var context
+    @Environment(\.openURL) private var openURL
     @Query(sort: \ChatMessageRecord.date) private var messages: [ChatMessageRecord]
     @AppStorage("pathway") private var pathwayRaw = RecoveryPathway.twelveStep.rawValue
     @State private var vm = AssistantViewModel()
@@ -60,6 +62,12 @@ struct AssistantView: View {
                             }
                         }
                         Divider()
+                        Section("Use your Claude Pro / ChatGPT Plus") {
+                            ForEach(SubscriptionHandoff.allCases) { target in
+                                Button { handOff(to: target) } label: { Label(target.title, systemImage: target.icon) }
+                            }
+                        }
+                        Divider()
                         Button("Clear conversation", role: .destructive) { confirmClear = true }
                     } label: {
                         Label("Pathway", systemImage: pathway.icon)
@@ -82,7 +90,26 @@ struct AssistantView: View {
                     .buttonStyle(.bordered)
                     .tint(.teal)
             }
+            Text("Have Claude Pro or ChatGPT Plus? Chat there on your own subscription:")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.top, 8)
+            HStack {
+                ForEach(SubscriptionHandoff.allCases) { target in
+                    Button { handOff(to: target) } label: { Label(target.title, systemImage: target.icon) }
+                        .buttonStyle(.bordered)
+                        .font(.footnote)
+                }
+            }
         }
+    }
+
+    /// Copies the conversation and opens it in the official app, which uses the user's subscription.
+    private func handOff(to target: SubscriptionHandoff) {
+        let history = messages.map { ChatTurn(role: $0.role, content: $0.content) }
+        let prompt = SubscriptionHandoff.prompt(pathway: pathway, history: history)
+        UIPasteboard.general.string = prompt
+        openURL(target.url(prompt: prompt))
     }
 
     private var inputBar: some View {

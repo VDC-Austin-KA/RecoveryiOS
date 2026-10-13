@@ -70,10 +70,11 @@ struct MeetingsView: View {
     }
 
     private func mapView(_ results: [Meeting]) -> some View {
-        let pins = results.compactMap { meeting in meeting.coordinate.map { MeetingPin(meeting: meeting, coordinate: $0) } }
+        // ponytail: nearest 250 pins keeps MapKit smooth; cluster annotations if more are ever needed.
+        let pins = results.prefix(400).compactMap { meeting in meeting.coordinate.map { MeetingPin(meeting: meeting, coordinate: $0) } }.prefix(250)
         return Map(position: $position, selection: $selectedID) {
             UserAnnotation()
-            ForEach(pins) { pin in
+            ForEach(Array(pins)) { pin in
                 Marker(pin.meeting.name, systemImage: pin.meeting.fellowship.icon, coordinate: pin.coordinate)
                     .tint(pin.meeting.fellowship.color)
                     .tag(pin.id)
@@ -115,11 +116,25 @@ struct MeetingsView: View {
                 }
             }
             let resultsTitle: String = results.isEmpty ? "No meetings match your filters" : "\(results.count) meetings"
-            Section(resultsTitle) {
-                ForEach(results) { meeting in
+            Section {
+                ForEach(results.prefix(300)) { meeting in
                     Button { detail = meeting } label: {
                         MeetingRow(meeting: meeting, distance: meeting.distance(from: location))
                     }
+                }
+            } header: {
+                Text(resultsTitle)
+            } footer: {
+                if results.count > 300 { Text("Showing the closest 300. Use search or filters to narrow down.") }
+            }
+            Section("Official meeting finders") {
+                ForEach(Fellowship.allCases) { fellowship in
+                    Link(destination: fellowship.officialFinderURL) {
+                        Label("\(fellowship.fullName) — find meetings", systemImage: "safari")
+                    }
+                }
+                Link(destination: URL(string: "https://meetings.al-anon.org/electronic-meeting-page/")!) {
+                    Label("Al-Anon electronic (online/phone) meetings", systemImage: "safari")
                 }
             }
         }

@@ -40,15 +40,17 @@ struct AppConfiguration {
 }
 
 enum AIProviderKind: String, CaseIterable, Identifiable {
-    case automatic, anthropic, openAI, mock
+    case automatic, onDevice, openRouter, anthropic, openAI, mock
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
-        case .automatic: "Automatic"
-        case .anthropic: "Anthropic (Claude)"
-        case .openAI: "OpenAI"
+        case .automatic: "Automatic (best available)"
+        case .onDevice: "Apple Intelligence (free, on-device)"
+        case .openRouter: "OpenRouter (free models)"
+        case .anthropic: "Claude API key"
+        case .openAI: "OpenAI API key"
         case .mock: "Offline companion"
         }
     }
@@ -63,4 +65,5 @@ enum AIProviderKind: String, CaseIterable, Identifiable {
 enum APIKeyAccount {
     static let openAI = "OPENAI_API_KEY"
     static let anthropic = "ANTHROPIC_API_KEY"
+    static let openRouter = "OPENROUTER_API_KEY"
 }
